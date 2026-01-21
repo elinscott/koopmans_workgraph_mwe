@@ -6,10 +6,11 @@ import numpy as np
 import numpy.typing as npt
 from ase.dft.kpoints import BandPath
 from ase.spectrum.band_structure import BandStructure
-from pydantic import BeforeValidator, field_validator, model_validator
+from pydantic import BeforeValidator, field_validator, model_validator, Field
 
 from koopmans_workgraph_mwe.parameters.pw import PwInputParameters
 from koopmans_workgraph_mwe.files import File, FileViaRecursiveSymlink
+from koopmans_workgraph_mwe.pydantic_config import FlexibleStr
 from koopmans_workgraph_mwe.serialization import deserialize_ase_bandstructure, deserialize_numpy
 
 from .calculator import CalculatorInputs, CalculatorOutputs
@@ -18,8 +19,8 @@ from .calculator import CalculatorInputs, CalculatorOutputs
 class BasePwInputs(CalculatorInputs):
     """Generic inputs for calculations with pw.x."""
 
-    parameters: PwInputParameters
-    pseudopotential_family: str
+    parameters: PwInputParameters = {} # Field(default_factory=lambda: PwInputParameters())
+    pseudopotential_family: FlexibleStr
     outdir: FileViaRecursiveSymlink | None = None
     calculation: ClassVar[str]
 

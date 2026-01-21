@@ -897,3 +897,6 @@ scratch/
 
 # Claude
 .claude
+
+# uv
+uv.lock

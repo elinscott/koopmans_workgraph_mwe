@@ -3,7 +3,8 @@ import numpy as np
 import contextlib
 import os
 from pathlib import Path
-
+import inspect
+from functools import wraps
 
 def remove_numpy_from_dict(obj: Any) -> Any:
     """
@@ -51,3 +52,18 @@ def chdir_logic(path: Path | str):
 def chdir(path: Path | str):
     """Return a context that changes the working directory (returns to the original directory when done)."""
     return chdir_logic(path)
+
+
+def with_model_signature(model_cls):
+    def decorator(func):
+        sig = inspect.signature(model_cls)
+        return_annotation = inspect.signature(func).return_annotation
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            inputs = model_cls(**kwargs)
+            return func(inputs)
+
+        wrapper.__signature__ = sig.replace(return_annotation=return_annotation)
+        return wrapper
+    return decorator

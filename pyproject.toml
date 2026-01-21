@@ -55,6 +55,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydantic-espresso",
     "pydantic-pint>=0.3",
+    "pydash>=8.0.6",
     "tqdm", # progress bars
     "typing-extensions",
 ]
@@ -118,6 +119,13 @@ release = [
 # see https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-optional-dependencies
 [project.optional-dependencies]
 
+
+[project.entry-points."aiida.data"]
+"koopmans_workgraph_mwe.ase.dft.kpoints.BandPath" = "koopmans_workgraph_mwe.aiida_serializers:bandpath_to_aiida"
+"koopmans_workgraph_mwe.aiida_serializers.BandPathData" = "koopmans_workgraph_mwe.aiida_serializers:BandPathData"
+"koopmans_workgraph_mwe.pathlib.PosixPath" = "koopmans_workgraph_mwe.aiida_serializers:path_to_aiida"
+"koopmans_workgraph_mwe.pathlib.WindowsPath" = "koopmans_workgraph_mwe.aiida_serializers:path_to_aiida"
+"koopmans_workgraph_mwe.koopmans_workgraph_mwe.files.File" = "koopmans_workgraph_mwe.aiida_serializers:file_to_aiida"
 
 # See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#urls
 # and also https://packaging.python.org/en/latest/specifications/well-known-project-urls/
