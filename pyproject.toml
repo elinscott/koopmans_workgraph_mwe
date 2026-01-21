@@ -123,6 +123,8 @@ release = [
 [project.entry-points."aiida.data"]
 "koopmans_workgraph_mwe.ase.dft.kpoints.BandPath" = "koopmans_workgraph_mwe.aiida_serializers:bandpath_to_aiida"
 "koopmans_workgraph_mwe.aiida_serializers.BandPathData" = "koopmans_workgraph_mwe.aiida_serializers:BandPathData"
+"koopmans_workgraph_mwe.ase.spectrum.band_structure.BandStructure" = "koopmans_workgraph_mwe.aiida_serializers:bandstructure_to_aiida"
+"koopmans_workgraph_mwe.aiida_serializers.BandStructureData" = "koopmans_workgraph_mwe.aiida_serializers:BandStructureData"
 "koopmans_workgraph_mwe.pathlib.PosixPath" = "koopmans_workgraph_mwe.aiida_serializers:path_to_aiida"
 "koopmans_workgraph_mwe.pathlib.WindowsPath" = "koopmans_workgraph_mwe.aiida_serializers:path_to_aiida"
 "koopmans_workgraph_mwe.koopmans_workgraph_mwe.files.File" = "koopmans_workgraph_mwe.aiida_serializers:file_to_aiida"

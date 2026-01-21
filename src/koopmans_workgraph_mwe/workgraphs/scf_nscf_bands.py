@@ -19,7 +19,7 @@ from koopmans_workgraph_mwe.status import Status
 The following implementations are very verbose. Ideally they'd be replaced by e.g.
 @task
 def run_pw_nscf(inputs: PwNscfInputs) -> PwNscfOutputs:
-    return PwNscfOutputs()
+    return PwNscfOutputs(...)
 """
 
 @task(
@@ -83,7 +83,7 @@ def run_pw_bands(
         walltime="0s",
         fermi_level=[],
         outdir=outdir,
-        band_structure=serialize_ase_bandstructure(band_structure),
+        band_structure=band_structure,
         status=Status.COMPLETED.value,
         error_message=None,
         error_type=None,
