@@ -1,6 +1,8 @@
 from ase import Atoms
-from typing import Protocol, Any
+from typing import Protocol, Any. TypedDict
 from ase.spectrum.band_structure import BandStructure
+import numpy as np
+import numpy.typing as npt
 
 from koopmans_workgraph_mwe.parameters.pw import PwInputParameters
 from koopmans_workgraph_mwe.calculators.pw import PwBandsInputs, PwNscfInputs, PwScfInputs, PwBandsOutputs, PwNscfOutputs, PwScfOutputs
@@ -13,6 +15,11 @@ class PwWorkflowInputs(BaseModel):
     pw_parameters: PwInputParameters = {} # Field(default_factory=lambda: PwInputParameters())
     pseudopotential_family: FlexibleStr
 
+class PwWorkflowInputsDict(TypedDict):
+    atoms: Atoms
+    kpoints: Kpoints
+    pw_parameters: PwInputParameters
+    pseudopotential_family: FlexibleStr
 
 class PwWorkflowOutputs(BaseModel):
     total_energy: float
@@ -24,11 +31,12 @@ class EngineProtocol(Protocol):
     def run_pw_scf(self, inputs: PwScfInputs) -> PwScfOutputs: ...
     def run_pw_nscf(self, inputs: PwNscfInputs) -> PwNscfOutputs: ...
     def run_pw_bands(self, inputs: PwBandsInputs) -> PwBandsOutputs: ...
-    def run_set(self, inputs: BaseModel, key: str, value: Any) -> BaseModel: ...
+    def run_set_to_none(self, model: BaseModel, key: str) -> BaseModel: ...
+    def kpoints_to_explicit_grid(self, kpoints: Kpoints) -> npt.NDArray[np.float64]: ...
 
 
 def run_scf_nscf_bands(inputs: PwWorkflowInputs, engine: EngineProtocol) -> PwWorkflowOutputs:
-    scf_parameters = engine.run_set(inputs.pw_parameters, 'system.nbnd', None)
+    scf_parameters = engine.run_set_to_none(inputs.pw_parameters, 'system.nbnd')
 
     scf_outputs = engine.run_pw_scf(
         atoms = inputs.atoms,
@@ -58,20 +66,26 @@ def run_scf_nscf_bands(inputs: PwWorkflowInputs, engine: EngineProtocol) -> PwWo
 
 
 def run_scf_nscf_bands_unwrapped(engine: EngineProtocol, **kwargs):
+    """To adhere to existing aiida-workgraph pydantic patterns
+    
+    Hopefully can be replaced by the previous function in the future.
+    """
     inputs = PwWorkflowInputs.model_validate(kwargs)
-    # scf_parameters = engine.run_set(inputs.pw_parameters, 'system.nbnd', None)
+    updated_parameters = engine.run_set_to_none(inputs.pw_parameters, 'system.nbnd')
+
+    explicit_grid = engine.kpoints_to_explicit_grid(inputs.kpoints)
 
     scf_outputs = engine.run_pw_scf(
         atoms = inputs.atoms,
-        parameters = inputs.pw_parameters, # scf_parameters,
+        parameters = updated_parameters.model,
         pseudopotential_family = inputs.pseudopotential_family,
-        kpoints = inputs.kpoints.explicit_grid
+        kpoints = explicit_grid.result
     )
 
     nscf_outputs = engine.run_pw_nscf(
         atoms = inputs.atoms,
         parameters = inputs.pw_parameters,
-        kpoints = inputs.kpoints.explicit_grid,
+        kpoints = explicit_grid.result,
         pseudopotential_family = inputs.pseudopotential_family,
         outdir = scf_outputs.outdir
     )

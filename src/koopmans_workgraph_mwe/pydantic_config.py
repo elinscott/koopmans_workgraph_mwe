@@ -73,13 +73,16 @@ class BaseModel(_BaseModel):
         return file_inputs
     
     def to_dict(self):
+        """Serialize the model to a dict compatible with aiida-pythonjob's JsonableData."""
         return {
-            '@class': f'{self.__class__.__module__}.{self.__class__.__name__}',
+            '@class': self.__class__.__name__,
+            '@module': self.__class__.__module__,
             '@data': self.model_dump(mode='json'),
         }
 
     @classmethod
     def from_dict(cls, data):
+        """Deserialize the model from a dict created by to_dict."""
         if '@data' in data:
             return cls.model_validate(data['@data'])
         return cls.model_validate(data)

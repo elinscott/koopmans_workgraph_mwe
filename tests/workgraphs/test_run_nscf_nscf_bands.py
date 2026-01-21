@@ -22,3 +22,5 @@ def test_aiida_scf_nscf_bands(run_within_tmpdir):
 
     assert wg.outputs.total_energy.value < 0.0
     assert wg.outputs.band_structure.value is not None
+
+    wg.to_html('test.html')

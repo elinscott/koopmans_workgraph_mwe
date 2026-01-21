@@ -69,9 +69,9 @@ class Engine(BaseModel, ABC):
         self._post_run(outputs, uid)
         return outputs
     
-    def run_set(self, model: BaseModel, key: str, value: Any) -> BaseModel:
+    def run_set_to_none(self, model: BaseModel, key: str) -> BaseModel:
         model_copy = model.model_copy()
-        set_(model_copy, key, value)
+        set_(model_copy, key, None)
         return model_copy
     
     def run_scf_nscf_bands(self, **kwargs) -> PwWorkflowOutputs:

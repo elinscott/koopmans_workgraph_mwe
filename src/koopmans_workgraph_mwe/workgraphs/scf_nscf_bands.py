@@ -1,5 +1,6 @@
 from aiida_workgraph import task
 from koopmans_workgraph_mwe.workflows.scf_nscf_bands import run_scf_nscf_bands_unwrapped, PwWorkflowOutputs
+from pydash import set_
 
 from koopmans_workgraph_mwe.calculators.pw import PwInputParameters, PwScfOutputs, PwNscfInputs, PwNscfOutputs, PwBandsInputs, PwBandsOutputs
 from ase import Atoms
@@ -92,17 +93,28 @@ def run_pw_bands(
         cbm=None,
     )
 
-# @task
-# def run_set(model: BaseModel, key: str, value: Any) -> BaseModel:
-#     model_copy = model.model_copy()
-#     set_(model_copy, key, value)
-#     return {'output': model_copy}
+@task(
+    inputs = ["model", "key"],
+    outputs = ["model"]
+)
+def run_set_to_none(model: BaseModel, key: str):
+    model_copy = model.model_copy()
+    set_(model_copy, key, None)
+    return {"model": model_copy}
+
+@task(
+    inputs = ["kpoints"],
+    outputs = ["result"]
+)
+def kpoints_to_explicit_grid(kpoints: Kpoints) -> npt.NDArray[np.float64]:
+    return kpoints.explicit_grid
 
 class AiiDATasks:
     run_pw_scf = run_pw_scf
     run_pw_nscf = run_pw_nscf
     run_pw_bands = run_pw_bands
-    # run_set = run_set
+    run_set_to_none = run_set_to_none
+    kpoints_to_explicit_grid = kpoints_to_explicit_grid
 
 @task.graph(
     inputs = ["atoms", "pw_parameters", "pseudopotential_family", "kpoints"]
@@ -113,10 +125,9 @@ def aiida_run_scf_nscf_bands(
     pseudopotential_family: FlexibleStr,
     kpoints: Kpoints
 ) -> PwWorkflowOutputs:
-    outputs = run_scf_nscf_bands_unwrapped(
+    return run_scf_nscf_bands_unwrapped(
         atoms=atoms,
         pw_parameters=pw_parameters,
         pseudopotential_family=pseudopotential_family,
         kpoints=kpoints,
         engine=AiiDATasks)
-    return outputs  # Already a dict with socket references

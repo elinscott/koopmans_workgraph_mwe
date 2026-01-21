@@ -86,10 +86,12 @@ class NonGammaKpoints(KpointsBase):
         return pts_array
 
 
-Kpoints = Annotated[
-    GammaOnlyKpoints | NonGammaKpoints,
-    Field(discriminator="gamma_only"),
-]
+# Kpoints = Annotated[
+#     GammaOnlyKpoints | NonGammaKpoints,
+#     Field(discriminator="gamma_only"),
+# ]
+
+Kpoints = NonGammaKpoints
 
 
 def kpoints_from_path_as_string(path: str, cell: Cell, density: float = 10.0, **kwargs: Any) -> NonGammaKpoints:
