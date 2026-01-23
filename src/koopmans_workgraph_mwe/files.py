@@ -157,36 +157,9 @@ from typing import Literal, TypedDict
 class SingleFileDict(TypedDict):
     """A TypedDict representing a single file."""
 
-    kind: Literal["single_file"]
     uid: str
 
 class DirectoryDict(TypedDict):
     """A TypedDict representing a directory."""
 
-    kind: Literal["directory"]
     uid: str
-
-class LinkDict(TypedDict):
-    """A typed dict representing a link from a source to a destination."""
-
-    kind: Literal["link"]
-    src: SingleFileDict | DirectoryDict
-    dest: str
-    symlink: bool
-    recursive_symlink: bool
-    overwrite: bool
-
-def single_file(uid: str) -> SingleFileDict:
-    """Create a SingleFileDict."""
-    return SingleFileDict(kind="single_file", uid=uid)
-
-def directory(uid: str) -> DirectoryDict:
-    """Create a DirectoryDict."""
-    return DirectoryDict(kind="directory", uid=uid)
-
-def link(src: SingleFileDict | DirectoryDict, dest: str | None = None, symlink: bool = False, recursive_symlink: bool = False,
-         overwrite: bool = False) -> LinkDict:
-    """Create a LinkDict."""
-    dest = dest or src["uid"].split('/')[-1]
-    return LinkDict(kind="link", src=src, dest=dest, symlink=symlink,
-                    recursive_symlink=recursive_symlink, overwrite=overwrite)

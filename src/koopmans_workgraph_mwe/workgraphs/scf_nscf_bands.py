@@ -1,5 +1,6 @@
+import uuid
 from collections.abc import Callable
-from typing import Any, Literal, Protocol, TypedDict, TypeVar, Unpack, cast
+from typing import Any, Protocol, TypedDict, TypeVar, Unpack, cast
 
 from aiida_workgraph import task as aiida_task
 from ase import Atoms
@@ -8,8 +9,8 @@ from ase.spectrum.band_structure import BandStructure
 from pydantic import Field
 
 from koopmans_workgraph_mwe.calculators.pw import run_bands, run_nscf, run_scf
+from koopmans_workgraph_mwe.commands import CommandsConfig
 from koopmans_workgraph_mwe.engines.localhost import LocalhostEngine
-from koopmans_workgraph_mwe.files import link
 from koopmans_workgraph_mwe.kpoints import Kpoints, KpointsModel
 from koopmans_workgraph_mwe.normalize.pw import normalize_bands, normalize_nscf, normalize_scf
 from koopmans_workgraph_mwe.parameters.pw import PwInputParametersDict, PwInputParametersModel
@@ -27,7 +28,6 @@ class PwWorkflowInputsDict(TypedDict):
     kpoints: Kpoints
     pw_parameters: PwInputParametersDict
     pseudopotential_family: str
-    kind: Literal['node_inputs']
 
 
 class PwWorkflowInputs(BaseModel):
@@ -35,27 +35,16 @@ class PwWorkflowInputs(BaseModel):
     kpoints: KpointsModel
     pw_parameters: PwInputParametersModel = Field(default_factory=PwInputParametersModel)
     pseudopotential_family: str
-    kind: Literal['node_inputs'] = 'node_inputs'
 
 
 class PwWorkflowOutputsDict(TypedDict):
     total_energy: float
     band_structure: BandStructure
-    kind: Literal['node_outputs']
-
-
-def pw_workflow_outputs_factory(total_energy: float, band_structure: BandStructure) -> PwWorkflowOutputsDict:
-    return PwWorkflowOutputsDict(
-        total_energy=total_energy,
-        band_structure=band_structure,
-        kind='node_outputs',
-    )
 
 
 class PwWorkflowOutputs(BaseModel):
     total_energy: float
     band_structure: BandStructure
-    kind: Literal['node_outputs'] = 'node_outputs'
 
 
 def kpoints_to_bandpath(kpoints: Kpoints) -> BandPath | None:
@@ -74,40 +63,40 @@ def run_scf_nscf_bands_core(
     task: TaskWrapper,
     **kwargs: Unpack[PwWorkflowInputsDict],
 ) -> PwWorkflowOutputsDict:
-    scf_parameters = task(normalize_scf)(parameters=kwargs['pw_parameters'])
+    scf_parameters = task(normalize_scf)(parameters=kwargs['pw_parameters'],
+                                         pseudo_family=kwargs['pseudopotential_family'])
     task(require_all)(parameters=scf_parameters, requirements=SCF_REQUIREMENTS)
 
     scf_outputs = task(run_scf)(
         metadata={'call_link_label': 'pw-scf'},
         atoms=kwargs['atoms'],
         parameters=scf_parameters,
-        pseudopotential_family=kwargs['pseudopotential_family'],
         kpoints=kwargs['kpoints']['explicit_grid']
     )
 
-    nscf_parameters = task(normalize_nscf)(parameters=kwargs['pw_parameters'])
+    nscf_parameters = task(normalize_nscf)(parameters=kwargs['pw_parameters'],
+                                           pseudo_family=kwargs['pseudopotential_family'])
     task(require_all)(parameters=nscf_parameters, requirements=NSCF_REQUIREMENTS)
     nscf_outputs = task(run_nscf)(
         metadata={'call_link_label': 'pw-nscf'},
         atoms=kwargs['atoms'],
         parameters=nscf_parameters,
-        pseudopotential_family=kwargs['pseudopotential_family'],
-        outdir=link(scf_outputs['outdir'], recursive_symlink=True),
+        outdir=scf_outputs['outdir'],
         kpoints=kwargs['kpoints']['explicit_grid']
     )
 
-    bands_parameters = task(normalize_bands)(parameters=kwargs['pw_parameters'])
+    bands_parameters = task(normalize_bands)(parameters=kwargs['pw_parameters'],
+                                             pseudo_family=kwargs['pseudopotential_family'])
     task(require_all)(parameters=bands_parameters, requirements=BANDS_REQUIREMENTS)
     bands_outputs = task(run_bands)(
         metadata={'call_link_label': 'pw-bands'},
         atoms=kwargs['atoms'],
         parameters=bands_parameters,
-        pseudopotential_family=kwargs['pseudopotential_family'],
-        outdir=link(nscf_outputs['outdir'], recursive_symlink=True),
+        outdir=nscf_outputs['outdir'],
         kpoints=kwargs['kpoints']['path']
     )
 
-    return pw_workflow_outputs_factory(
+    return PwWorkflowOutputsDict(
         total_energy=scf_outputs['total_energy'],
         band_structure=bands_outputs['band_structure'],
     )
@@ -126,7 +115,6 @@ def run_scf_nscf_bands(engine: LocalhostEngine, **kwargs: Any) -> PwWorkflowOutp
     sanitised_kwargs = adapt_pw_input(kwargs)
     output = run_scf_nscf_bands_core(engine.task, **sanitised_kwargs)
     return adapt_pw_output(output)
-
 
 @aiida_task.graph
 def run_scf_nscf_bands_with_aiida(**kwargs: Unpack[PwWorkflowInputsDict]) -> PwWorkflowOutputsDict:

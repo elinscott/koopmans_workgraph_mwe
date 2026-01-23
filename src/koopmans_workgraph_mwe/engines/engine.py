@@ -2,10 +2,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import field_validator
-
-from koopmans_workgraph_mwe.commands import CommandsConfig, command_configs_factory
-from koopmans_workgraph_mwe.files import DirectoryDict, SingleFileDict, directory, single_file
+from koopmans_workgraph_mwe.commands import CommandsConfig
+from koopmans_workgraph_mwe.files import DirectoryDict, SingleFileDict
 from koopmans_workgraph_mwe.pydantic_config import BaseModel
 
 
@@ -13,14 +11,6 @@ class EngineABC(BaseModel, ABC):
 
     uids: list[str] = []
     commands: CommandsConfig
-
-    @field_validator('commands', mode='before')
-    @classmethod
-    def validate_commands(cls, v: Any) -> CommandsConfig:
-        if isinstance(v, dict):
-            return v if 'kind' in v else command_configs_factory(**v)
-        else:
-            raise ValueError("commands should be a dict.")
 
     def _pre_run(
         self,
@@ -34,27 +24,27 @@ class EngineABC(BaseModel, ABC):
         if inputs_model is not None:
             # Validate and dump inputs
             model = inputs_model.model_validate(inputs)
-            self._dump(model, single_file(uid=uid + '/' + 'inputs.json'))
+            self._dump(model, SingleFileDict(uid=uid + '/' + 'inputs.json'))
 
         # Create working directory
         # For the moment, always run from scratch
-        working_dir = directory(uid=uid)
+        working_dir = DirectoryDict(uid=uid)
         if self.file_exists(working_dir):
             self.delete_file(working_dir)
         self.mkdir(working_dir, parents=True, exist_ok=True)
 
-        # Copy over any inputs that correspond to files
-        for k, inp in inputs.items():
-            if not isinstance(inp, dict) or inp.get('kind') != 'link':
-                continue
-            if inp['src']['kind'] == 'single_file':
-                dest = single_file(uid=uid + '/' + inp['dest'])
-            else:
-                dest = directory(uid=uid + '/' + inp['dest'])
-            if inp['symlink']:
-                self.link_file(inp['src'], dest, overwrite=inp['overwrite'])
-            else:
-                self.copy_file(inp['src'], dest, overwrite=inp['overwrite'])
+        # # Copy over any inputs that correspond to files
+        # for k, inp in inputs.items():
+        #     if not isinstance(inp, dict) or inp.get('kind') != 'link':
+        #         continue
+        #     if inp['src']['kind'] == 'single_file':
+        #         dest = single_file(uid=uid + '/' + inp['dest'])
+        #     else:
+        #         dest = directory(uid=uid + '/' + inp['dest'])
+        #     if inp['symlink']:
+        #         self.link_file(inp['src'], dest, overwrite=inp['overwrite'])
+        #     else:
+        #         self.copy_file(inp['src'], dest, overwrite=inp['overwrite'])
 
         return uid
 
@@ -66,7 +56,7 @@ class EngineABC(BaseModel, ABC):
     ) -> None:
         if outputs_model is not None:
             model = outputs_model.model_validate(outputs)
-            self._dump(model, single_file(uid=uid + '/' + 'outputs.json'))
+            self._dump(model, SingleFileDict(uid=uid + '/' + 'outputs.json'))
 
     def task(
         self,
@@ -83,8 +73,6 @@ class EngineABC(BaseModel, ABC):
                 kwargs['uid'] = uid
             if 'commands' in func.__code__.co_varnames:
                 kwargs['commands'] = self.commands
-            if 'link_file' in func.__code__.co_varnames:
-                kwargs['link_file'] = self.link_file
             outputs: dict[str, Any] = func(**kwargs)
             self._post_run(uid, outputs, output_model)
             return outputs

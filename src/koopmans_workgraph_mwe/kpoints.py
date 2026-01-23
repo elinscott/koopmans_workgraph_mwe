@@ -27,32 +27,12 @@ PATH_DESCRIPTION = "An ASE ``BandPath`` object specifying the k-path as defined 
 GAMMA_ONLY_DESCRIPTION = "True if the calculation is only sampling the gamma point."
 
 class Kpoints(TypedDict):
-    kind: Literal["kpoints"]
     gamma_only: bool
     grid: tuple[int, int, int]
     offset: tuple[ZeroOrOne, ZeroOrOne, ZeroOrOne]
     offset_nscf: tuple[Fractional, Fractional, Fractional]
     path: BandPath | None
     explicit_grid: list[ExplicitKpoint]
-
-def kpoints_factory(
-    gamma_only: bool,
-    grid: tuple[int, int, int],
-    offset: tuple[ZeroOrOne, ZeroOrOne, ZeroOrOne],
-    offset_nscf: tuple[float, float, float],
-    path: BandPath | None,
-    explicit_grid: list[ExplicitKpoint] | None = None,
-) -> Kpoints:
-    """Factory function to create a Kpoints TypedDict."""
-    return Kpoints(
-        kind="kpoints",
-        gamma_only=gamma_only,
-        grid=grid,
-        offset=offset,
-        offset_nscf=offset_nscf,
-        path=path,
-        explicit_grid=explicit_grid or [],
-    )
 
 _GAMMA_GRID: tuple[int, int, int] = (1, 1, 1)
 _GAMMA_OFFSET: tuple[ZeroOrOne, ZeroOrOne, ZeroOrOne] = (0, 0, 0)
@@ -143,7 +123,14 @@ def kpoints_from_path_as_string(grid: tuple[int, int, int],
                                 density: float = 10.0) -> Kpoints:
     """Create a NonGammaKpoints object using a string for the path instead of a `BandPath` object."""
     bandpath = convert_kpath_str_to_bandpath(path, cell, density)
-    return kpoints_factory(gamma_only=False, grid=grid, path=bandpath, offset=offset, offset_nscf=offset_nscf)
+    return Kpoints(
+        gamma_only=False,
+        grid=grid,
+        offset=offset,
+        offset_nscf=offset_nscf,
+        path=bandpath,
+        explicit_grid=[],
+    )
 
 
 def convert_kpath_str_to_bandpath(path: str, cell: Cell, density: float | None = None) -> BandPath:

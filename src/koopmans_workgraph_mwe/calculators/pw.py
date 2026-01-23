@@ -1,8 +1,8 @@
 """pw calculator module for koopmans."""
 
-from collections.abc import Callable
+import uuid
 from pathlib import Path
-from typing import Any, Unpack
+from typing import Any, Unpack, NotRequired
 
 import numpy as np
 import numpy.typing as npt
@@ -10,39 +10,37 @@ from ase.calculators.calculator import CalculationFailed
 from ase.calculators.espresso import Espresso, EspressoProfile
 from ase.dft.kpoints import BandPath
 from ase.spectrum.band_structure import BandStructure
-from pint import Quantity
 
 from koopmans_workgraph_mwe.commands import CommandsConfig
 from koopmans_workgraph_mwe.files import (
     DirectoryDict,
-    LinkDict,
-    SingleFileDict,
-    directory,
-    single_file,
 )
 from koopmans_workgraph_mwe.kpoints import ExplicitKpoint
 from koopmans_workgraph_mwe.parameters.pw import PwInputParametersDict
 from koopmans_workgraph_mwe.status import Status
 from koopmans_workgraph_mwe.utils import remove_null_from_obj
+from koopmans_workgraph_mwe.os.local import link_path
 
 from .calculator import CalculatorInputsDict, CalculatorOutputsDict
 
 class _PwInputsDict(CalculatorInputsDict):
     parameters: PwInputParametersDict
-    pseudopotential_family: str
-    outdir: LinkDict | None
 
 class PwInputsDict(_PwInputsDict):
     kpoints: BandPath | list[ExplicitKpoint]
+    outdir: NotRequired[DirectoryDict]
 
 class PwScfInputsDict(_PwInputsDict):
     kpoints: list[ExplicitKpoint]
+    outdir: NotRequired[DirectoryDict]
 
 class PwNscfInputsDict(_PwInputsDict):
     kpoints: list[ExplicitKpoint]
+    outdir: DirectoryDict
 
 class PwBandsInputsDict(_PwInputsDict):
     kpoints: BandPath
+    outdir: DirectoryDict
 
 
 class _PwOutputsDict(CalculatorOutputsDict):
@@ -58,30 +56,22 @@ class PwScfOutputsDict(_PwOutputsDict):
     total_energy: float
 
 
-def pw_scf_outputs(kind: str='calculator_output', **kwargs):
-    return PwScfOutputsDict(kind=kind, **kwargs)
-
 class PwNscfOutputsDict(_PwOutputsDict):
     pass
 
-
-def pw_nscf_outputs(kind: str='calculator_output', **kwargs):
-    return PwNscfOutputsDict(kind=kind, **kwargs)
 
 class PwBandsOutputsDict(_PwOutputsDict):
     band_structure: BandStructure
 
 
-def pw_bands_outputs(kind: str='calculator_output', **kwargs):
-    return PwBandsOutputsDict(kind=kind, **kwargs)
-
-
 def _run_pw_with_ase(
-    uid: str,
-    commands: CommandsConfig,
-    link_file: Callable[[SingleFileDict | DirectoryDict, SingleFileDict | DirectoryDict, bool], None],
-    **kwargs: Unpack[_PwInputsDict],
+    uid: str | None = None,
+    commands: CommandsConfig | None = None,
+    **kwargs: Unpack[PwInputsDict],
 ) -> PWOutputsDict:
+    # Generate a uid if not provided
+    uid = uid if uid is not None else str(uuid.uuid4())
+
     # Create a profile and calculator
     profile = EspressoProfile(command=commands['pw'], pseudo_dir="pseudopotentials")  # type: ignore[no-untyped-call]
     ase_calc = Espresso(directory=uid, profile=profile)  # type: ignore[no-untyped-call]
@@ -102,13 +92,13 @@ def _run_pw_with_ase(
             pseudopotentials[atom.symbol] = f"{atom.symbol}.upf"
     ase_calc.parameters['pseudopotentials'] = pseudopotentials
 
-    # Copy over the pseudopotentials
-    pseudo_folder = Path(uid) / "pseudopotentials"
-    pseudo_folder.mkdir(parents=True, exist_ok=True)
-    for pseudo in set(pseudopotentials.values()):
-        src = single_file(uid=str(Path(__file__).parents[1] / 'pseudopotentials' / kwargs['pseudopotential_family'] / pseudo))
-        dest = single_file(uid=str(pseudo_folder / pseudo))
-        link_file(src, dest, True)
+    # Copy the outdir
+    src = kwargs.get('outdir', None)
+    if src is not None:
+        src_path = Path(src['uid'])
+        dest = Path(uid) / kwargs['parameters']['control']['outdir']
+        link_path(src_path, dest, recursive=True)
+
 
     error_message: str | None = None
     error_type: type[BaseException] | None = None
@@ -133,7 +123,7 @@ def _run_pw_with_ase(
     outputs['eigenvalues'] = ase_calc.results.get('eigenvalues', None)
 
     # Store the outdir
-    outputs['outdir'] = directory(uid = uid + '/' + kwargs['parameters']['control']['outdir'])
+    outputs['outdir'] = DirectoryDict(uid=uid + '/' + kwargs['parameters']['control']['outdir'])
 
     # Store the band structure
     if isinstance(kpts, BandPath):
@@ -150,31 +140,28 @@ def _run_pw_with_ase(
 
 
 def run_scf(
-    uid: str,
-    commands: CommandsConfig,
-    link_file: Callable[[SingleFileDict | DirectoryDict, SingleFileDict | DirectoryDict, bool], None],
+    uid: str | None = None,
+    commands: CommandsConfig | None = None,
     **kwargs: Unpack[PwScfInputsDict],
 ) -> PwScfOutputsDict:
-    outputs = _run_pw_with_ase(uid, commands, link_file, **kwargs)
-    return pw_scf_outputs(**outputs)
+    outputs = _run_pw_with_ase(uid, commands, **kwargs)
+    return PwScfOutputsDict(**outputs)
 
 
 def run_nscf(
-    uid: str,
-    commands: CommandsConfig,
-    link_file: Callable[[SingleFileDict | DirectoryDict, SingleFileDict | DirectoryDict, bool], None],
+    uid: str | None = None,
+    commands: CommandsConfig | None = None,
     **kwargs: Unpack[PwNscfInputsDict],
 ) -> PwNscfOutputsDict:
-    outputs = _run_pw_with_ase(uid, commands, link_file, **kwargs)
-    return pw_nscf_outputs(**outputs)
+    outputs = _run_pw_with_ase(uid, commands, **kwargs)
+    return PwNscfOutputsDict(**outputs)
 
 
 def run_bands(
-    uid: str,
-    commands: CommandsConfig,
-    link_file: Callable[[SingleFileDict | DirectoryDict, SingleFileDict | DirectoryDict, bool], None],
+    uid: str | None = None,
+    commands: CommandsConfig | None = None,
     **kwargs: Unpack[PwBandsInputsDict],
 ) -> PwBandsOutputsDict:
-    outputs = _run_pw_with_ase(uid, commands, link_file, **kwargs)
-    return pw_bands_outputs(**outputs)
+    outputs = _run_pw_with_ase(uid, commands, **kwargs)
+    return PwBandsOutputsDict(**outputs)
 

@@ -293,4 +293,5 @@ search = "version: {current_version}"
 replace = "version: {new_version}"
 
 [tool.uv.sources]
+aiida-workgraph = { git = "https://github.com/aiidateam/aiida-workgraph" }
 pydantic-espresso = { path = "../pydantic_espresso" }
