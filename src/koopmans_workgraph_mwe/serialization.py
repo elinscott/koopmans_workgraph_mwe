@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -8,38 +9,42 @@ from ase.dft.kpoints import BandPath
 from ase.spectrum.band_structure import BandStructure
 from ase.spectrum.doscollection import GridDOSCollection
 from ase.spectrum.dosdata import GridDOSData
-from koopmans_workgraph_mwe.utils import remove_numpy_from_dict
+
+from koopmans_workgraph_mwe.utils import remove_numpy_from_obj
 
 
 def serialize_ase_atoms(self: Atoms) -> dict[str, Any]:
-    return remove_numpy_from_dict(self.todict())
+    dct: dict[str, Any] = self.todict()  # type: ignore[no-untyped-call]
+    return remove_numpy_from_obj(dct)
 
 
 def deserialize_ase_atoms(value: Any) -> Atoms:
     if isinstance(value, Atoms):
         return value
     elif isinstance(value, dict):
-        return Atoms.fromdict(value)
+        atoms: Atoms = Atoms.fromdict(value)  # type: ignore[no-untyped-call]
+        return atoms
     raise ValueError(f"Cannot deserialize an ASE Atoms from a {type(value)}")
 
 
 def serialize_ase_cell(cell: Cell) -> dict[str, Any]:
-    return remove_numpy_from_dict(cell.todict())
+    dct: dict[str, Any] = cell.todict()  # type: ignore[no-untyped-call]
+    return remove_numpy_from_obj(dct)
 
 
 def deserialize_ase_cell(value: Any) -> Cell:
     if isinstance(value, Cell):
         return value
     elif isinstance(value, dict):
-        return Cell(**value)
+        return Cell(**value)  # type: ignore[no-untyped-call]
     raise ValueError(f"Cannot deserialize an ASE Cell from a {type(value)}")
 
 
 def serialize_ase_bandpath(bandpath: BandPath) -> dict[str, Any]:
-    dct = bandpath.todict()
+    dct: dict[str, Any] = bandpath.todict()  # type: ignore[no-untyped-call]
     dct.pop('labelseq')
     dct['cell'] = serialize_ase_cell(dct['cell'])
-    return remove_numpy_from_dict(dct)
+    return remove_numpy_from_obj(dct)
 
 
 def deserialize_ase_bandpath(value: Any) -> BandPath:
@@ -47,14 +52,14 @@ def deserialize_ase_bandpath(value: Any) -> BandPath:
         return value
     elif isinstance(value, dict):
         value['cell'] = deserialize_ase_cell(value['cell'])
-        return BandPath(**value)
+        return BandPath(**value)  # type: ignore[no-untyped-call]
     raise ValueError(f"Cannot deserialize an ASE BandPath from a {type(value)}")
 
 
 def serialize_ase_bandstructure(bandstructure: BandStructure) -> dict[str, Any]:
-    dct = bandstructure.todict()
+    dct: dict[str, Any] = bandstructure.todict()  # type: ignore[no-untyped-call]
     dct['path'] = serialize_ase_bandpath(dct['path'])
-    return remove_numpy_from_dict(dct)
+    return remove_numpy_from_obj(dct)
 
 
 def deserialize_ase_bandstructure(value: Any) -> BandStructure:
@@ -62,7 +67,7 @@ def deserialize_ase_bandstructure(value: Any) -> BandStructure:
         return value
     elif isinstance(value, dict):
         value['path'] = deserialize_ase_bandpath(value['path'])
-        return BandStructure(**value)
+        return BandStructure(**value)  # type: ignore[no-untyped-call]
     raise ValueError(f"Cannot deserialize an ASE BandStructure from a {type(value)}")
 
 
@@ -77,10 +82,11 @@ def deserialize_numpy(value: Any) -> npt.NDArray[np.float64]:
 
 
 def serialize_ase_griddosdata(data: GridDOSData) -> dict[str, Any]:
+    info: dict[str, Any] = data.info  # type: ignore[has-type]
     return {
         "energies": data.get_energies().tolist(),
         "weights": data.get_weights().tolist(),
-        "info": data.info,
+        "info": info,
     }
 
 
@@ -94,11 +100,12 @@ def deserialize_ase_griddosdata(value: Any) -> GridDOSData:
 
 def serialize_ase_griddoscollection(dos: GridDOSCollection) -> dict[str, Any]:
     """Serialize an ASE GridDOSCollection by reconstructing the dos_series objects required to initialize it."""
+    info_list: list[dict[str, Any]] = dos._info  # type: ignore[unused-ignore, attr-defined]
     dct = {
         "dos_series": [serialize_ase_griddosdata(GridDOSData(dos.get_energies(), data, info))
-                       for data, info in zip(dos.get_all_weights(), dos._info)]
+                       for data, info in zip(dos.get_all_weights(), info_list)]
     }
-    return remove_numpy_from_dict(dct)
+    return remove_numpy_from_obj(dct)
 
 
 def deserialize_ase_griddoscollection(value: Any) -> GridDOSCollection:
@@ -111,7 +118,7 @@ def deserialize_ase_griddoscollection(value: Any) -> GridDOSCollection:
     raise ValueError(f"Cannot deserialize an ASE GridDOSCollection from a {type(value)}")
 
 
-json_encoders = {
+json_encoders: dict[type[object], Callable[[Any], Any]] = {
     Atoms: serialize_ase_atoms,
     BandPath: serialize_ase_bandpath,
     BandStructure: serialize_ase_bandstructure,

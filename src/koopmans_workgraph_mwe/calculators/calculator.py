@@ -1,23 +1,23 @@
-from typing import Annotated
+from typing import Any, Literal, TypedDict
 
 from ase import Atoms
-from pydantic_pint import PydanticPintQuantity
 from pint import Quantity
 
-from koopmans_workgraph_mwe.pydantic_config import BaseModel
 from koopmans_workgraph_mwe.status import Status
 
 
+class CalculatorInputsDict(TypedDict):
+    """Parent dictionary for calculator inputs."""
 
-class CalculatorInputs(BaseModel):
-    """Parent input model for calculators."""
+    kind: Literal["calculator_input"]
     atoms: Atoms
 
 
-class CalculatorOutputs(BaseModel):
-    """Parent output model for calculators."""
+class CalculatorOutputsDict(TypedDict):
+    """Parent dictionary for calculator outputs."""
 
-    walltime: Annotated[Quantity, PydanticPintQuantity("s")]
+    kind: Literal["calculator_output"]
+    walltime: Quantity[Any]
     status: Status
-    error_message: str | None = None
-    error_type: type | None = None
+    error_message: str | None
+    error_type: type[BaseException] | None

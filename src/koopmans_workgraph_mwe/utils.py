@@ -1,30 +1,52 @@
-from typing import Any
-import numpy as np
 import contextlib
 import os
+from collections.abc import Generator
 from pathlib import Path
-import inspect
-from functools import wraps
+from typing import Any, TypeVar, overload
 
-def remove_numpy_from_dict(obj: Any) -> Any:
+import numpy as np
+from numpy import typing as npt
+
+T = TypeVar('T')
+
+@overload
+def remove_numpy_from_obj(obj: npt.NDArray[Any]) -> list[Any]: ...
+
+@overload
+def remove_numpy_from_obj(obj: T) -> T: ...
+
+def remove_numpy_from_obj(obj: Any) -> Any:
     """
     Recursively convert NumPy arrays to Python lists inside nested structures.
     Supports dict, list, tuple, set, and nested combinations.
     """
     if isinstance(obj, dict):
-        return {k: remove_numpy_from_dict(v) for k, v in obj.items()}
+        return {k: remove_numpy_from_obj(v) for k, v in obj.items()}
     elif isinstance(obj, list):
-        return [remove_numpy_from_dict(v) for v in obj]
+        return [remove_numpy_from_obj(v) for v in obj]
     elif isinstance(obj, tuple):
-        return tuple(remove_numpy_from_dict(v) for v in obj)
+        return tuple(remove_numpy_from_obj(v) for v in obj)
     elif isinstance(obj, set):
-        return {remove_numpy_from_dict(v) for v in obj}
+        return {remove_numpy_from_obj(v) for v in obj}
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
     else:
         return obj
 
-def chdir_logic(path: Path | str):
+def remove_null_from_obj(obj: T) -> T:
+    null_values: tuple[Any, ...] = (None, '', [], {}, ())
+    if isinstance(obj, dict):
+        return {k: remove_null_from_obj(v) for k, v in obj.items() if v not in null_values}
+    elif isinstance(obj, list):
+        return [remove_null_from_obj(v) for v in obj if v not in null_values]
+    elif isinstance(obj, tuple):
+        return tuple(remove_null_from_obj(v) for v in obj if v not in null_values)
+    elif isinstance(obj, set):
+        return {remove_null_from_obj(v) for v in obj if v not in null_values}
+    else:
+        return obj
+
+def chdir_logic(path: Path | str) -> Generator[None, None, None]:
     """Change the working directory.
 
     Allows for the context "with chdir(path)". All code within this
@@ -49,21 +71,6 @@ def chdir_logic(path: Path | str):
 
 
 @contextlib.contextmanager
-def chdir(path: Path | str):
+def chdir(path: Path | str) -> Generator[None, None, None]:
     """Return a context that changes the working directory (returns to the original directory when done)."""
     return chdir_logic(path)
-
-
-def with_model_signature(model_cls):
-    def decorator(func):
-        sig = inspect.signature(model_cls)
-        return_annotation = inspect.signature(func).return_annotation
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            inputs = model_cls(**kwargs)
-            return func(inputs)
-
-        wrapper.__signature__ = sig.replace(return_annotation=return_annotation)
-        return wrapper
-    return decorator

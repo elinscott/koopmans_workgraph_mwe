@@ -1,88 +1,180 @@
 """pw calculator module for koopmans."""
 
-from typing import Annotated, ClassVar, Any
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, Unpack
 
 import numpy as np
 import numpy.typing as npt
+from ase.calculators.calculator import CalculationFailed
+from ase.calculators.espresso import Espresso, EspressoProfile
 from ase.dft.kpoints import BandPath
 from ase.spectrum.band_structure import BandStructure
-from pydantic import BeforeValidator, field_validator, model_validator, Field
+from pint import Quantity
 
-from koopmans_workgraph_mwe.parameters.pw import PwInputParameters
-from koopmans_workgraph_mwe.files import File, FileViaRecursiveSymlink
-from koopmans_workgraph_mwe.pydantic_config import FlexibleStr
-from koopmans_workgraph_mwe.serialization import deserialize_ase_bandstructure, deserialize_numpy
+from koopmans_workgraph_mwe.commands import CommandsConfig
+from koopmans_workgraph_mwe.files import (
+    DirectoryDict,
+    LinkDict,
+    SingleFileDict,
+    directory,
+    single_file,
+)
+from koopmans_workgraph_mwe.kpoints import ExplicitKpoint
+from koopmans_workgraph_mwe.parameters.pw import PwInputParametersDict
+from koopmans_workgraph_mwe.status import Status
+from koopmans_workgraph_mwe.utils import remove_null_from_obj
 
-from .calculator import CalculatorInputs, CalculatorOutputs
+from .calculator import CalculatorInputsDict, CalculatorOutputsDict
 
+class _PwInputsDict(CalculatorInputsDict):
+    parameters: PwInputParametersDict
+    pseudopotential_family: str
+    outdir: LinkDict | None
 
-class BasePwInputs(CalculatorInputs):
-    """Generic inputs for calculations with pw.x."""
+class PwInputsDict(_PwInputsDict):
+    kpoints: BandPath | list[ExplicitKpoint]
 
-    parameters: PwInputParameters = {} # Field(default_factory=lambda: PwInputParameters())
-    pseudopotential_family: FlexibleStr
-    outdir: FileViaRecursiveSymlink | None = None
-    calculation: ClassVar[str]
+class PwScfInputsDict(_PwInputsDict):
+    kpoints: list[ExplicitKpoint]
 
-    @model_validator(mode='after')
-    def check_outdir_provided_if_required(self):
-        """Check if outdir has been provided if using `restart_mode = "restart"`."""
-        if self.parameters.control.restart_mode == 'restart' and self.outdir is None:
-            raise ValueError('Please provide an `outdir` when using `restart_mode = "restart"`')
-        return self
+class PwNscfInputsDict(_PwInputsDict):
+    kpoints: list[ExplicitKpoint]
 
-    @field_validator('parameters', mode='before')
-    @classmethod
-    def set_calculation(cls, value: PwInputParameters) -> PwInputParameters:
-        """Ensure that calculation type matches `self.calculation`."""
-        value.control.calculation = cls.calculation
-        return value
-    
-    @model_validator(mode='before')
-    @classmethod
-    def force_outdir_to_tmp(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data['parameters'].control.outdir = 'tmp'
-        return data
+class PwBandsInputsDict(_PwInputsDict):
+    kpoints: BandPath
 
 
-class BasePwOutputs(CalculatorOutputs):
-    eigenvalues: Annotated[npt.NDArray[np.float64], BeforeValidator(deserialize_numpy)] | None = None
-    fermi_level: list[float]
-    outdir: File
+class _PwOutputsDict(CalculatorOutputsDict):
+    eigenvalues: npt.NDArray[np.float64] | None
+    fermi_level: list[float] | None
+    outdir: DirectoryDict
 
-class PwScfInputs(BasePwInputs):
-    kpoints: Annotated[npt.NDArray[np.float64], BeforeValidator(deserialize_numpy)]
-    calculation: ClassVar[str] = 'scf'
+class PWOutputsDict(_PwOutputsDict):
+    total_energy: float | None
+    band_structure: BandStructure | None
 
-class PwScfOutputs(BasePwOutputs):
+class PwScfOutputsDict(_PwOutputsDict):
     total_energy: float
 
-class PwNscfInputs(BasePwInputs):
-    kpoints: Annotated[npt.NDArray[np.float64], BeforeValidator(deserialize_numpy)]
-    calculation: ClassVar[str] = 'nscf'
 
-    @field_validator('outdir', mode='after')
-    def ensure_outdir_provided(cls, value: str | None) -> str:
-        """Ensure that outdir is provided for nscf calculations."""
-        if value is None:
-            raise ValueError('Please provide an `outdir` for nscf calculations')
-        return value
+def pw_scf_outputs(kind: str='calculator_output', **kwargs):
+    return PwScfOutputsDict(kind=kind, **kwargs)
 
-class PwNscfOutputs(BasePwOutputs):
+class PwNscfOutputsDict(_PwOutputsDict):
     pass
 
-class PwBandsInputs(BasePwInputs):
-    kpoints: BandPath
-    calculation: ClassVar[str] = 'bands'
 
-    @field_validator('outdir', mode='after')
-    def ensure_outdir_provided(cls, value: str | None) -> str:
-        """Ensure that outdir is provided for nscf calculations."""
-        if value is None:
-            raise ValueError('Please provide an `outdir` for nscf calculations')
-        return value
+def pw_nscf_outputs(kind: str='calculator_output', **kwargs):
+    return PwNscfOutputsDict(kind=kind, **kwargs)
 
-class PwBandsOutputs(BasePwOutputs):
-    band_structure: Annotated[BandStructure, BeforeValidator(deserialize_ase_bandstructure)] | None = None
-    vbm: list[float] | None = None
-    cbm: list[float] | None = None
+class PwBandsOutputsDict(_PwOutputsDict):
+    band_structure: BandStructure
+
+
+def pw_bands_outputs(kind: str='calculator_output', **kwargs):
+    return PwBandsOutputsDict(kind=kind, **kwargs)
+
+
+def _run_pw_with_ase(
+    uid: str,
+    commands: CommandsConfig,
+    link_file: Callable[[SingleFileDict | DirectoryDict, SingleFileDict | DirectoryDict, bool], None],
+    **kwargs: Unpack[_PwInputsDict],
+) -> PWOutputsDict:
+    # Create a profile and calculator
+    profile = EspressoProfile(command=commands['pw'], pseudo_dir="pseudopotentials")  # type: ignore[no-untyped-call]
+    ase_calc = Espresso(directory=uid, profile=profile)  # type: ignore[no-untyped-call]
+
+    # Set up the input parameters
+    ase_calc.parameters['input_data'] = remove_null_from_obj(kwargs["parameters"])
+
+    if isinstance(kwargs['kpoints'], BandPath):
+        kpts = kwargs['kpoints']
+    else:
+        kpts = np.array(kwargs['kpoints'], dtype=np.float64)
+    ase_calc.parameters['kpts'] = kpts
+
+    # Set up the pseudopotentials
+    pseudopotentials: dict[str, str] = {}
+    for atom in kwargs["atoms"]:
+        if atom.symbol not in pseudopotentials:
+            pseudopotentials[atom.symbol] = f"{atom.symbol}.upf"
+    ase_calc.parameters['pseudopotentials'] = pseudopotentials
+
+    # Copy over the pseudopotentials
+    pseudo_folder = Path(uid) / "pseudopotentials"
+    pseudo_folder.mkdir(parents=True, exist_ok=True)
+    for pseudo in set(pseudopotentials.values()):
+        src = single_file(uid=str(Path(__file__).parents[1] / 'pseudopotentials' / kwargs['pseudopotential_family'] / pseudo))
+        dest = single_file(uid=str(pseudo_folder / pseudo))
+        link_file(src, dest, True)
+
+    error_message: str | None = None
+    error_type: type[BaseException] | None = None
+    try:
+        ase_calc.calculate(atoms=kwargs["atoms"], properties=['energy'], system_changes=None)  # type: ignore[no-untyped-call]
+        status = Status.COMPLETED
+    except CalculationFailed as error:
+        status = Status.FAILED
+        error_message = str(error)
+        error_type = type(error)
+    outputs: dict[str, Any] = {'status': status, 'error_message': error_message, 'error_type': error_type}
+
+    # Store the total energy
+    outputs['total_energy'] = ase_calc.results.get('energy', None)
+
+    # Store the fermi level
+    fermi_level_result: Any = ase_calc.results.get('fermi_level', [])
+    fermi_level: list[float] = fermi_level_result if isinstance(fermi_level_result, list) else [fermi_level_result]
+    outputs['fermi_level'] = fermi_level
+
+    # Store the eigenvalues
+    outputs['eigenvalues'] = ase_calc.results.get('eigenvalues', None)
+
+    # Store the outdir
+    outputs['outdir'] = directory(uid = uid + '/' + kwargs['parameters']['control']['outdir'])
+
+    # Store the band structure
+    if isinstance(kpts, BandPath):
+        reference = max(fermi_level) if fermi_level else 0.0
+        try:
+            outputs['band_structure'] = BandStructure(path=kpts, energies=outputs['eigenvalues'], reference=reference)  # type: ignore[no-untyped-call]
+        except:
+            raise ValueError()
+
+    # Store the walltime
+    outputs['walltime'] = ase_calc.results.get('walltime', '0.0s')
+
+    return outputs
+
+
+def run_scf(
+    uid: str,
+    commands: CommandsConfig,
+    link_file: Callable[[SingleFileDict | DirectoryDict, SingleFileDict | DirectoryDict, bool], None],
+    **kwargs: Unpack[PwScfInputsDict],
+) -> PwScfOutputsDict:
+    outputs = _run_pw_with_ase(uid, commands, link_file, **kwargs)
+    return pw_scf_outputs(**outputs)
+
+
+def run_nscf(
+    uid: str,
+    commands: CommandsConfig,
+    link_file: Callable[[SingleFileDict | DirectoryDict, SingleFileDict | DirectoryDict, bool], None],
+    **kwargs: Unpack[PwNscfInputsDict],
+) -> PwNscfOutputsDict:
+    outputs = _run_pw_with_ase(uid, commands, link_file, **kwargs)
+    return pw_nscf_outputs(**outputs)
+
+
+def run_bands(
+    uid: str,
+    commands: CommandsConfig,
+    link_file: Callable[[SingleFileDict | DirectoryDict, SingleFileDict | DirectoryDict, bool], None],
+    **kwargs: Unpack[PwBandsInputsDict],
+) -> PwBandsOutputsDict:
+    outputs = _run_pw_with_ase(uid, commands, link_file, **kwargs)
+    return pw_bands_outputs(**outputs)
+
