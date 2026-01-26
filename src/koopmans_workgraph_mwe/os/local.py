@@ -2,18 +2,21 @@ from pathlib import Path
 import shutil
 from koopmans_workgraph_mwe.files import DirectoryDict, SingleFileDict
 
+def _dict_to_path(dct: SingleFileDict | DirectoryDict) -> Path:
+    return Path(dct["parent_uid"]) / dct["path"]
+
 def file_exists(path: SingleFileDict | DirectoryDict) -> bool:
-    return Path(path["uid"]).exists() or Path(path["uid"]).is_symlink()
+    return _dict_to_path(path).exists() or _dict_to_path(path).is_symlink()
 
 
 def write_to_file(content: str, path: SingleFileDict | DirectoryDict) -> None:
     """Write content to a file."""
-    with open(path["uid"], 'w') as f:
+    with open(_dict_to_path(path), 'w') as f:
         f.write(content)
 
 
 def delete_file(path: SingleFileDict | DirectoryDict) -> None:
-    explicit_path = Path(path["uid"])
+    explicit_path = _dict_to_path(path)
     if explicit_path.is_dir():
         shutil.rmtree(explicit_path)
     else:
@@ -21,8 +24,8 @@ def delete_file(path: SingleFileDict | DirectoryDict) -> None:
 
 
 def copy_file(src: SingleFileDict | DirectoryDict, dest: SingleFileDict | DirectoryDict) -> None:
-    src_path = Path(src["uid"])
-    dest_path = Path(dest["uid"])
+    src_path = _dict_to_path(src)
+    dest_path = _dict_to_path(dest)
     if src_path.is_dir():
         shutil.copytree(src_path, dest_path)
     else:
@@ -30,13 +33,13 @@ def copy_file(src: SingleFileDict | DirectoryDict, dest: SingleFileDict | Direct
 
 
 def is_dir(path: SingleFileDict | DirectoryDict) -> bool:
-    explicit_path = Path(path["uid"])
+    explicit_path = _dict_to_path(path)
     return explicit_path.is_dir()
 
 
 def mkdir(path: DirectoryDict, parents: bool = False, exist_ok: bool = False) -> None:
     """Create a directory at the given path."""
-    dir_path = Path(path["uid"])
+    dir_path = _dict_to_path(path)
     dir_path.mkdir(parents=parents, exist_ok=exist_ok)
 
 
@@ -46,8 +49,8 @@ def link_file(
     recursive: bool = False,
 ) -> None:
     """Link a file from src to dest."""
-    src_path = Path(src["uid"])
-    dest_path = Path(dest["uid"])
+    src_path = _dict_to_path(src)
+    dest_path = _dict_to_path(dest)
     link_path(src_path, dest_path, recursive=recursive)
 
 def link_path(

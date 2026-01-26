@@ -1,6 +1,9 @@
 """A class for representing files in a general way by tethering them to a parent process."""
 
 from typing import Literal, TypedDict
+from pathlib import Path
+
+from koopmans_workgraph_mwe.pydantic_config import BaseModel
 
 # from __future__ import annotations
 #
@@ -157,9 +160,35 @@ from typing import Literal, TypedDict
 class SingleFileDict(TypedDict):
     """A TypedDict representing a single file."""
 
-    uid: str
+    parent_uid: str
+    path: Path
+    is_dir: Literal[False]
+
+class SingleFileModel(BaseModel):
+    """A Pydantic model representing a single file."""
+
+    parent_uid: str
+    path: Path
+    is_dir: Literal[False] = False
+
+def single_file_factory(parent_uid: str, path: Path) -> SingleFileDict:
+    """Create a SingleFileDict."""
+    return SingleFileDict(parent_uid=parent_uid, path=path, is_dir=False)
 
 class DirectoryDict(TypedDict):
     """A TypedDict representing a directory."""
 
-    uid: str
+    parent_uid: str
+    path: Path
+    is_dir: Literal[True]
+
+class DirectoryModel(BaseModel):
+    """A Pydantic model representing a directory."""
+
+    parent_uid: str
+    path: Path
+    is_dir: Literal[True] = True
+
+def directory_factory(parent_uid: str, path: Path) -> DirectoryDict:
+    """Create a DirectoryDict."""
+    return DirectoryDict(parent_uid=parent_uid, path=path, is_dir=True)

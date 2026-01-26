@@ -1,4 +1,3 @@
-import uuid
 from collections.abc import Callable
 from typing import Any, Protocol, TypedDict, TypeVar, Unpack, cast
 
@@ -7,6 +6,7 @@ from ase import Atoms
 from ase.dft.kpoints import BandPath
 from ase.spectrum.band_structure import BandStructure
 from pydantic import Field
+from aiida.orm import load_code
 
 from koopmans_workgraph_mwe.calculators.pw import run_bands, run_nscf, run_scf
 from koopmans_workgraph_mwe.commands import CommandsConfig
@@ -56,7 +56,7 @@ R = TypeVar('R')
 
 
 class TaskWrapper(Protocol):
-    def __call__(self, func: Callable[..., R]) -> Callable[..., R]: ...
+    def __call__(self, func: Callable[..., R], name: str | None = None) -> Callable[..., R]: ...
 
 
 def run_scf_nscf_bands_core(
@@ -67,8 +67,7 @@ def run_scf_nscf_bands_core(
                                          pseudo_family=kwargs['pseudopotential_family'])
     task(require_all)(parameters=scf_parameters, requirements=SCF_REQUIREMENTS)
 
-    scf_outputs = task(run_scf)(
-        metadata={'call_link_label': 'pw-scf'},
+    scf_outputs = task(run_scf, name='pw-scf')(
         atoms=kwargs['atoms'],
         parameters=scf_parameters,
         kpoints=kwargs['kpoints']['explicit_grid']
@@ -77,8 +76,7 @@ def run_scf_nscf_bands_core(
     nscf_parameters = task(normalize_nscf)(parameters=kwargs['pw_parameters'],
                                            pseudo_family=kwargs['pseudopotential_family'])
     task(require_all)(parameters=nscf_parameters, requirements=NSCF_REQUIREMENTS)
-    nscf_outputs = task(run_nscf)(
-        metadata={'call_link_label': 'pw-nscf'},
+    nscf_outputs = task(run_nscf, name='pw-nscf')(
         atoms=kwargs['atoms'],
         parameters=nscf_parameters,
         outdir=scf_outputs['outdir'],
@@ -88,8 +86,7 @@ def run_scf_nscf_bands_core(
     bands_parameters = task(normalize_bands)(parameters=kwargs['pw_parameters'],
                                              pseudo_family=kwargs['pseudopotential_family'])
     task(require_all)(parameters=bands_parameters, requirements=BANDS_REQUIREMENTS)
-    bands_outputs = task(run_bands)(
-        metadata={'call_link_label': 'pw-bands'},
+    bands_outputs = task(run_bands, name='pw-bands')(
         atoms=kwargs['atoms'],
         parameters=bands_parameters,
         outdir=nscf_outputs['outdir'],
@@ -116,6 +113,33 @@ def run_scf_nscf_bands(engine: LocalhostEngine, **kwargs: Any) -> PwWorkflowOutp
     output = run_scf_nscf_bands_core(engine.task, **sanitised_kwargs)
     return adapt_pw_output(output)
 
+def get_commands_from_aiida(pw_label: str) -> CommandsConfig:
+    """Load command paths from AiiDA codes configured in the profile."""
+    pw_code = load_code(pw_label)
+    return CommandsConfig(pw=str(pw_code.filepath_executable))
+
+
+def make_aiida_task_wrapper(commands: CommandsConfig) -> TaskWrapper:
+    """Create a task wrapper that injects commands from AiiDA profile."""
+    def wrapper(func: Callable[..., R], name: str | None = None) -> Callable[..., R]:
+        wrapped = aiida_task.task(func)
+
+        def with_injected_args(**kwargs: Any) -> R:
+            if name is not None:
+                kwargs.setdefault('metadata', {})['call_link_label'] = name
+            if 'commands' in func.__code__.co_varnames:
+                kwargs['commands'] = commands
+            return wrapped(**kwargs)
+        return with_injected_args
+    return wrapper
+
+
 @aiida_task.graph
-def run_scf_nscf_bands_with_aiida(**kwargs: Unpack[PwWorkflowInputsDict]) -> PwWorkflowOutputsDict:
-    return run_scf_nscf_bands_core(aiida_task.task, **kwargs)
+def run_scf_nscf_bands_with_aiida(
+    pw_label: str,
+    **kwargs: Unpack[PwWorkflowInputsDict],
+) -> PwWorkflowOutputsDict:
+    # commands = get_commands_from_aiida(pw_label)
+    commands = CommandsConfig(pw='pw.x')  # temporary workaround
+    task_wrapper = make_aiida_task_wrapper(commands)
+    return run_scf_nscf_bands_core(task_wrapper, **kwargs)

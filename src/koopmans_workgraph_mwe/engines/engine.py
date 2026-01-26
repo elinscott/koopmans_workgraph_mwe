@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
+from pydantic import ValidationError
+from pathlib import Path
 
 from koopmans_workgraph_mwe.commands import CommandsConfig
-from koopmans_workgraph_mwe.files import DirectoryDict, SingleFileDict
+from koopmans_workgraph_mwe.files import DirectoryDict, SingleFileDict, DirectoryModel, SingleFileModel, directory_factory, single_file_factory
 from koopmans_workgraph_mwe.pydantic_config import BaseModel
 
 
@@ -24,27 +26,29 @@ class EngineABC(BaseModel, ABC):
         if inputs_model is not None:
             # Validate and dump inputs
             model = inputs_model.model_validate(inputs)
-            self._dump(model, SingleFileDict(uid=uid + '/' + 'inputs.json'))
+            self._dump(model, single_file_factory(parent_uid=uid, path=Path('inputs.json')))
 
         # Create working directory
         # For the moment, always run from scratch
-        working_dir = DirectoryDict(uid=uid)
+        working_dir = directory_factory(parent_uid=uid, path=Path())
         if self.file_exists(working_dir):
             self.delete_file(working_dir)
         self.mkdir(working_dir, parents=True, exist_ok=True)
 
-        # # Copy over any inputs that correspond to files
-        # for k, inp in inputs.items():
-        #     if not isinstance(inp, dict) or inp.get('kind') != 'link':
-        #         continue
-        #     if inp['src']['kind'] == 'single_file':
-        #         dest = single_file(uid=uid + '/' + inp['dest'])
-        #     else:
-        #         dest = directory(uid=uid + '/' + inp['dest'])
-        #     if inp['symlink']:
-        #         self.link_file(inp['src'], dest, overwrite=inp['overwrite'])
-        #     else:
-        #         self.copy_file(inp['src'], dest, overwrite=inp['overwrite'])
+        # Copy over any inputs that correspond to files
+        for k, inp in inputs.items():
+            try:
+                model = DirectoryModel.model_validate(inp)
+                factory = directory_factory
+            except ValidationError:
+                try:
+                    model = SingleFileModel.model_validate(inp)
+                    factory = single_file_factory
+                except ValidationError:
+                    continue
+            
+            dest = factory(parent_uid=uid, path=model.path)
+            self.link_file(inp, dest, recursive=model.is_dir, overwrite=True)
 
         return uid
 
@@ -56,18 +60,18 @@ class EngineABC(BaseModel, ABC):
     ) -> None:
         if outputs_model is not None:
             model = outputs_model.model_validate(outputs)
-            self._dump(model, SingleFileDict(uid=uid + '/' + 'outputs.json'))
+            self._dump(model, single_file_factory(parent_uid=uid, path=Path('outputs.json')))
 
     def task(
         self,
         func: Callable[..., Any],
+        name: str | None = None,
         input_model: type[BaseModel] | None = None,
         output_model: type[BaseModel] | None = None,
     ) -> Callable[..., Any]:
+        task_name = name if name is not None else func.__name__
         def run_task(**kwargs: Any) -> dict[str, Any]:
-            metadata = kwargs.pop('metadata', {})
-            name = metadata.get('call_link_label', func.__name__)
-            uid = self._pre_run(name, kwargs, input_model)
+            uid = self._pre_run(task_name, kwargs, input_model)
             # Provide uid and commands if needed
             if 'uid' in func.__code__.co_varnames:
                 kwargs['uid'] = uid

@@ -9,7 +9,6 @@ from koopmans_workgraph_mwe.workgraphs.scf_nscf_bands import (
     run_scf_nscf_bands,
     run_scf_nscf_bands_with_aiida,
 )
-from koopmans_workgraph_mwe.commands import CommandsConfig
 
 
 def test_run_scf_nscf_bands(run_within_tmpdir: Any) -> None:
@@ -44,7 +43,7 @@ def test_run_scf_nscf_bands_with_aiida(run_within_tmpdir: Any) -> None:
     )
 
     load_profile()
-    wg = run_scf_nscf_bands_with_aiida.build(**input_model.model_dump())
+    wg = run_scf_nscf_bands_with_aiida.build(pw_label='pw@localhost', **input_model.model_dump())
 
     wg.to_html('test.html')
 

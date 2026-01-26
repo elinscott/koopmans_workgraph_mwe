@@ -12,9 +12,7 @@ from ase.dft.kpoints import BandPath
 from ase.spectrum.band_structure import BandStructure
 
 from koopmans_workgraph_mwe.commands import CommandsConfig
-from koopmans_workgraph_mwe.files import (
-    DirectoryDict,
-)
+from koopmans_workgraph_mwe.files import DirectoryDict, directory_factory
 from koopmans_workgraph_mwe.kpoints import ExplicitKpoint
 from koopmans_workgraph_mwe.parameters.pw import PwInputParametersDict
 from koopmans_workgraph_mwe.status import Status
@@ -92,14 +90,6 @@ def _run_pw_with_ase(
             pseudopotentials[atom.symbol] = f"{atom.symbol}.upf"
     ase_calc.parameters['pseudopotentials'] = pseudopotentials
 
-    # Copy the outdir
-    src = kwargs.get('outdir', None)
-    if src is not None:
-        src_path = Path(src['uid'])
-        dest = Path(uid) / kwargs['parameters']['control']['outdir']
-        link_path(src_path, dest, recursive=True)
-
-
     error_message: str | None = None
     error_type: type[BaseException] | None = None
     try:
@@ -123,7 +113,7 @@ def _run_pw_with_ase(
     outputs['eigenvalues'] = ase_calc.results.get('eigenvalues', None)
 
     # Store the outdir
-    outputs['outdir'] = DirectoryDict(uid=uid + '/' + kwargs['parameters']['control']['outdir'])
+    outputs['outdir'] = directory_factory(parent_uid=uid, path=kwargs['parameters']['control']['outdir'])
 
     # Store the band structure
     if isinstance(kpts, BandPath):
