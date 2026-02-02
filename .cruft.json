@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/cthoyt/cookiecutter-snekpack",
-  "commit": "eb3fe94865cd7449ed93ee8b815e1990a2abec1a",
+  "commit": "d59632c93b5ae63cc8252e8008059c0444e9e7b0",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -24,7 +24,7 @@
       "__runner_tests": "py",
       "__gh_slug": "elinscott/koopmans-workgraph-mwe",
       "_template": "https://github.com/cthoyt/cookiecutter-snekpack",
-      "_commit": "eb3fe94865cd7449ed93ee8b815e1990a2abec1a"
+      "_commit": "d59632c93b5ae63cc8252e8008059c0444e9e7b0"
     }
   },
   "directory": null
